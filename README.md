@@ -148,6 +148,3 @@ Danach waren alle fünf Tickets wieder da (Bild ganz oben).
 
 Wenige Euro im Monat bei laufender Instanz. Wird der Server nicht gebraucht, wird er gestoppt.
 
----
-
-Hsieb Nazar · Informatikstudent, Bewerber für die Ausbildung Fachinformatiker Systemintegration
