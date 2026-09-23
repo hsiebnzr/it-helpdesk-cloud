@@ -1,23 +1,23 @@
 # IT-Helpdesk in der Cloud
 
-Ticketsystem, Inventarisierung und automatisches Offsite-Backup für eine fiktive
-**Musterfirma GmbH**, aufgebaut auf AWS mit GLPI und Docker.
-Mit getesteter Wiederherstellung: Ticket gelöscht, aus dem Backup zurückgeholt.
+In diesem Projekt habe ich einen kleinen IT-Helpdesk für die fiktive Musterfirma GmbH aufgebaut. Er läuft auf einem Linux-Server bei AWS, nutzt das Ticketsystem GLPI und sichert seine Datenbank jede Nacht automatisch in die Cloud. Dass die Sicherung auch im Ernstfall funktioniert, habe ich getestet: Ich habe ein Ticket endgültig gelöscht und es aus dem Backup wiederhergestellt.
 
 ![Ticketliste](docs/bilder/04-ticketliste.png)
 
-## Was das Projekt zeigt
+## Was ich umgesetzt habe
 
-| Aufgabe im IT-Alltag | Umsetzung |
+| Aufgabe | Wie ich sie gelöst habe |
 |---|---|
-| IT-Systeme einrichten | Linux-Server auf AWS EC2, Firewall-Regeln, Docker |
-| Programme installieren | GLPI und MySQL per Docker Compose, GLPI-Agent auf einem Windows-PC |
-| Anwender unterstützen | Ticketsystem mit Kategorien, Mitarbeiterkonten und Self-Service |
-| Hardware verwalten | Automatische Inventarisierung von Hardware und Software |
-| Daten sichern und wiederherstellen | Nächtliches Backup nach Amazon S3, Restore-Test |
-| Rechte vergeben | IAM-Rolle nach dem Prinzip Least Privilege, kein Zugangsschlüssel auf dem Server |
+| IT-System einrichten | Linux-Server auf AWS EC2 mit eigenen Firewall-Regeln und Docker |
+| Programme installieren | GLPI und MySQL über Docker Compose, dazu der GLPI-Agent auf einem Windows-PC |
+| Anwender unterstützen | Ticketsystem mit Kategorien, Mitarbeiterkonten und Self-Service-Portal |
+| Hardware verwalten | Hardware und Software werden automatisch inventarisiert |
+| Daten sichern und wiederherstellen | Nächtliches Backup nach Amazon S3, Wiederherstellung getestet |
+| Rechte vergeben | IAM-Rolle mit so wenig Rechten wie möglich, kein Zugangsschlüssel auf dem Server |
 
 ## Aufbau
+
+Alles läuft in der AWS-Region Frankfurt. Der Server schreibt seine Backups über eine IAM-Rolle in einen S3-Bucket, einen gespeicherten Zugangsschlüssel gibt es dafür nicht.
 
 ```mermaid
 flowchart LR
@@ -35,38 +35,38 @@ flowchart LR
 | Server | AWS EC2, Ubuntu 24.04, t3.small, 20 GB gp3, Region Frankfurt |
 | Firewall | SSH nur mit Schlüssel, HTTP nur von einer freigegebenen IP |
 | Software | Docker, Docker Compose, offizielles Image `glpi/glpi`, MySQL |
-| Backup | S3-Bucket, öffentlicher Zugriff blockiert, Lebenszyklusregel löscht nach 14 Tagen |
+| Backup | S3-Bucket ohne öffentlichen Zugriff, alte Backups werden nach 14 Tagen gelöscht |
 | Rechte | IAM-Rolle an der Instanz, darf Backups schreiben und lesen, aber nicht löschen |
 
 ## Umsetzung
 
 ### 1. Server und GLPI
 
-EC2-Instanz angelegt, Docker installiert, GLPI mit MySQL per Docker Compose gestartet.
-Die Standardkennwörter aller vier GLPI-Konten wurden sofort geändert.
+Zuerst habe ich eine EC2-Instanz mit Ubuntu 24.04 angelegt und Docker installiert. GLPI und die MySQL-Datenbank laufen als zwei Container, die ich mit Docker Compose starte. Direkt nach der Installation habe ich die Standardkennwörter aller vier GLPI-Konten geändert, denn sonst wäre das System mit allgemein bekannten Zugangsdaten erreichbar gewesen.
 
 ![Container laufen](docs/bilder/01-container.png)
 
-### 2. Firma, Benutzer, Inventar, Tickets
+### 2. Firma, Benutzer, Inventar und Tickets
 
-- Ticketkategorien: Hardware, Netzwerk, Konto und Zugang, Software
-- Zwei Mitarbeiterkonten mit dem Profil Self-Service
-- GLPI-Agent auf einem Windows-PC meldet Hardware und installierte Software automatisch
-- Fünf Tickets (Drucker, Kennwort, VPN, Notebook, Softwarewunsch) als Incident und Request, in verschiedenen Zuständen
+Danach habe ich GLPI so eingerichtet, wie es eine kleine Firma im Alltag braucht. Es gibt vier Ticketkategorien (Hardware, Netzwerk, Konto und Zugang, Software) und zwei Mitarbeiterkonten mit dem Profil Self-Service.
 
-**Inventar:** Der GLPI-Agent hat den PC mit Hersteller, Modell, Betriebssystem und Prozessor selbst gemeldet.
+Auf meinem Windows-PC habe ich den GLPI-Agent installiert. Er meldet Hardware und installierte Software selbstständig an den Server, ich musste den PC also nicht von Hand erfassen. Im Inventar steht er mit Hersteller, Modell, Betriebssystem und Prozessor:
 
 ![Inventar](docs/bilder/03-inventar.png)
 
-**Self-Service:** So meldet eine Mitarbeiterin ein Problem, ohne Zugriff auf die Technik-Ansicht.
+Mitarbeiter melden ihre Probleme über das Self-Service-Portal. Hier trägt Maria Becker ein Druckerproblem ein. Sie sieht dabei nur das Portal und nicht die Ansicht, mit der der Support arbeitet:
 
 ![Self-Service](docs/bilder/02-self-service.png)
 
+Insgesamt habe ich fünf Tickets angelegt, darunter einen Drucker, der nicht mehr druckt, ein vergessenes Kennwort und einen Softwarewunsch. Ein Teil davon sind Incidents, also Störungen. Der Rest sind Requests, bei denen jemand etwas Neues braucht. Die Tickets stehen in unterschiedlichen Zuständen, damit die Liste so aussieht wie im echten Betrieb.
+
 ### 3. Backup und Wiederherstellung
 
-Jede Nacht wird die Datenbank exportiert, komprimiert und nach S3 hochgeladen.
+Jede Nacht um 03:00 UTC exportiert ein Skript die Datenbank, packt sie mit gzip und lädt sie in einen S3-Bucket. Der Bucket ist für öffentliche Zugriffe komplett gesperrt. Eine Lebenszyklusregel löscht Backups, die älter als 14 Tage sind.
 
-**Rechte des Servers** (Inline-Richtlinie der IAM-Rolle):
+![Bucket gesperrt](docs/bilder/05-s3-gesperrt.png)
+
+Damit der Server überhaupt in den Bucket schreiben darf, hängt an der Instanz eine IAM-Rolle. Ihre Richtlinie erlaubt genau drei Aktionen: Inhalt auflisten, Dateien hochladen und Dateien herunterladen.
 
 ```json
 {
@@ -80,10 +80,9 @@ Jede Nacht wird die Datenbank exportiert, komprimiert und nach S3 hochgeladen.
 
 ![IAM-Richtlinie](docs/bilder/06-iam-richtlinie.png)
 
-Kein `DeleteObject`: Selbst wer den Server übernimmt, kann die Backups nicht löschen.
-Alte Backups räumt nur die Lebenszyklusregel des Buckets weg.
+Löschen darf der Server absichtlich nicht. Falls jemand den Server übernimmt, bleiben die Backups trotzdem erhalten. Alte Dateien entfernt ausschließlich die Lebenszyklusregel.
 
-**Backup-Skript** (`backup.sh`, per Cron täglich um 03:00 UTC):
+Das ist das Backup-Skript `backup.sh`:
 
 ```bash
 #!/bin/bash
@@ -103,20 +102,17 @@ rm "/tmp/$FILE"
 echo "$(date '+%F %T') OK $FILE"
 ```
 
-Kein Kennwort im Skript: Die Zugangsdaten kommen aus der `.env` von Docker Compose.
-`set -euo pipefail` sorgt dafür, dass ein fehlgeschlagener Export nicht als leere Datei hochgeladen wird.
+Im Skript steht kein Kennwort, die Zugangsdaten kommen aus der `.env`-Datei von Docker Compose. Die Zeile `set -euo pipefail` bricht das Skript beim ersten Fehler ab. Ohne sie könnte ein fehlgeschlagener Export als leere Datei hochgeladen werden, die nur so aussieht wie ein Backup.
 
-![Bucket gesperrt](docs/bilder/05-s3-gesperrt.png)
-
-Erster Lauf von Hand, Cron-Eintrag und Datei in S3:
+Den ersten Lauf habe ich von Hand gestartet und danach den Cron-Job eingerichtet:
 
 ![Backup und Cron](docs/bilder/07-backup-cron.png)
 
-Nachweis am nächsten Morgen, der Cron-Job hat um 03:00 UTC selbst gesichert:
+Am nächsten Morgen lag das automatische Backup von 03:00 Uhr im Bucket:
 
 ![Nacht-Backup](docs/bilder/08-nacht-backup.png)
 
-**Restore-Test:** Ein gelöstes Ticket wurde endgültig gelöscht und aus dem Backup zurückgeholt.
+Zum Schluss kam der wichtigste Test. Ich habe ein gelöstes Ticket endgültig gelöscht und die Datenbank danach aus dem Backup zurückgespielt:
 
 ```bash
 aws s3 cp s3://BUCKET/glpi_DATUM.sql.gz /tmp/restore.sql.gz
@@ -125,26 +121,29 @@ gunzip -c /tmp/restore.sql.gz | docker compose exec -T db sh -c 'exec mysql -u"$
 
 ![Restore](docs/bilder/09-restore.png)
 
-Danach waren alle fünf Tickets wieder da (Bild ganz oben).
+Anschließend waren alle fünf Tickets wieder da. Das Bild ganz oben zeigt die Liste nach der Wiederherstellung.
 
 ## Probleme und Lösungen
 
+Einiges hat beim ersten Versuch nicht geklappt. Hier sind die Fehler, an denen ich hängen geblieben bin, und wie ich sie gelöst habe.
+
 | Problem | Ursache | Lösung |
 |---|---|---|
-| EC2 Instance Connect verbindet nicht | SSH war nur für die eigene IP offen, die Browser-Verbindung kommt aber von AWS-Servern | SSH geöffnet, Anmeldung weiterhin nur per Schlüssel |
-| GLPI-Agent meldet nichts | Server-URL im Feld "Local target" (das ist ein Ordner) | URL unter "Remote targets": `http://SERVER/front/inventory.php` |
-| Ticketkategorien nicht auffindbar | In GLPI 11 sind Dropdowns als Kacheln gruppiert | Kachel Assistance, `/front/itilcategory.php` |
+| EC2 Instance Connect verbindet sich nicht | SSH war nur für meine eigene IP offen, die Verbindung aus dem Browser kommt aber von AWS-Servern | SSH freigegeben, die Anmeldung geht weiterhin nur per Schlüssel |
+| GLPI-Agent meldet nichts | Ich hatte die Server-URL ins Feld "Local target" eingetragen, das ist aber ein Ordner | URL unter "Remote targets" eingetragen: `http://SERVER/front/inventory.php` |
+| Ticketkategorien nicht auffindbar | In GLPI 11 sind die Dropdowns als Kacheln gruppiert | Über die Kachel Assistance, direkt unter `/front/itilcategory.php` |
 | `mysqldump` bricht ab (RELOAD) | `--single-transaction` braucht ein Recht, das der GLPI-Datenbankbenutzer nicht hat | Option weggelassen |
-| `mysqldump` bricht ab (Masking-Policies) | mysqldump aus MySQL 9 will Masking-Policies mitsichern und braucht dafür Root | Export mit mysqldump 8.4 aus einem Wegwerf-Container im selben Docker-Netz, dazu `--set-gtid-purged=OFF` |
-| Restore scheinbar ohne Wirkung | Ticketliste stand noch in der Papierkorb-Ansicht | Ansicht gewechselt, alle Tickets waren wieder da |
+| `mysqldump` bricht ab (Masking-Policies) | mysqldump aus MySQL 9 will Masking-Policies mitsichern und braucht dafür Root-Rechte | Export mit mysqldump 8.4 aus einem Wegwerf-Container im selben Docker-Netz, dazu `--set-gtid-purged=OFF` |
+| Restore hat scheinbar nichts bewirkt | Die Ticketliste stand noch in der Papierkorb-Ansicht | Ansicht gewechselt, danach waren alle Tickets zu sehen |
 
-## Bewusst weggelassen
+## Was bewusst fehlt
 
-- Kein HTTPS und keine Domain: Testumgebung, nur für eine IP erreichbar
-- Keine E-Mail-Anbindung an GLPI
-- Das Datei-Volume von GLPI wird nicht gesichert, weil keine Dokumente hochgeladen wurden. In einer echten Umgebung käme es als zweites Backup dazu.
+Weil es eine Testumgebung ist, habe ich ein paar Dinge weggelassen:
+
+- HTTPS und eine eigene Domain, der Server ist nur von einer IP aus erreichbar
+- eine E-Mail-Anbindung an GLPI
+- ein Backup des GLPI-Datei-Volumes, weil ich keine Dokumente hochgeladen habe. In einer echten Firma würde ich es als zweites Backup dazunehmen.
 
 ## Kosten
 
-Wenige Euro im Monat bei laufender Instanz. Wird der Server nicht gebraucht, wird er gestoppt.
-
+Solange die Instanz läuft, kostet das Projekt ein paar Euro im Monat. Wenn ich den Server nicht brauche, stoppe ich ihn. Dann bleibt nur die Festplatte mit rund 2 US-Dollar im Monat.
